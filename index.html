@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevPulse — Панель максимального анализа</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0c0a18;
+            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+        .glass-card {
+            background: rgba(23, 22, 38, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        .glow-effect {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(79, 70, 229, 0.25) 0%, rgba(79, 70, 229, 0) 60%);
+            transform: translate(-50%, -50%);
+            z-index: -1;
+            pointer-events: none;
+        }
+        .loader {
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top: 3px solid #ffffff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .fade-in-up {
+            animation: fadeInUp 0.5s ease-in-out forwards;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .favicon-img {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            background-color: rgba(255,255,255,0.1);
+        }
+        .tab-button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+        .tab-button.active {
+            background-color: rgba(79, 70, 229, 0.8);
+            color: white;
+        }
+        .tab-button:not(.active) {
+            color: #a0aec0;
+        }
+        .tab-button:not(.active):hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.4s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center p-4 overflow-x-hidden">
+    <div class="glow-effect"></div>
+    <main class="w-full max-w-4xl mx-auto z-10 flex-grow flex flex-col justify-center py-10">
+        <header class="text-center mb-10">
+            <h1 class="text-5xl md:text-6xl font-extrabold text-white">DevPulse</h1>
+            <p class="text-gray-400 mt-3 text-lg">Панель максимального анализа сайтов</p>
+        </header>
+
+        <form id="check-form" class="relative flex flex-col sm:flex-row gap-3 mb-10">
+            <input 
+                type="text" 
+                id="url-input" 
+                placeholder="Введите URL сайта, например, google.com" 
+                class="flex-grow w-full bg-gray-900/50 border border-gray-700 text-gray-200 rounded-lg pl-5 pr-36 py-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition duration-300"
+                required
+            >
+            <button 
+                type="submit" 
+                id="check-button"
+                class="sm:absolute sm:right-2 sm:top-1/2 sm:-translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-5 py-2.5 transition-all duration-300 flex items-center justify-center gap-2">
+                <span id="button-text">Анализ</span>
+                <div id="loader" class="loader hidden"></div>
+            </button>
+        </form>
+
+        <div id="result-wrapper" class="hidden glass-card rounded-xl p-6 fade-in-up">
+            <!-- Сюда будет вставлен весь результат -->
+        </div>
+
+        <div id="history-container" class="mt-12 hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-white">История</h2>
+                <button id="clear-history" class="text-sm text-gray-500 hover:text-white transition">Очистить</button>
+            </div>
+            <div id="history-list" class="space-y-3">
+                <!-- Сюда будет вставлена история -->
+            </div>
+        </div>
+    </main>
+    
+    <footer class="w-full text-center p-4 text-gray-500 text-sm z-10 mt-auto">
+        Создано для портфолио
+    </footer>
+
+    <script>
+        const API_ENDPOINT = 'checker.php'; 
+
+        const form = document.getElementById('check-form');
+        const urlInput = document.getElementById('url-input');
+        const checkButton = document.getElementById('check-button');
+        const buttonText = document.getElementById('button-text');
+        const loader = document.getElementById('loader');
+        const resultWrapper = document.getElementById('result-wrapper');
+        const historyContainer = document.getElementById('history-container');
+        const historyList = document.getElementById('history-list');
+        const clearHistoryBtn = document.getElementById('clear-history');
+
+        const setLoadingState = (isLoading) => {
+            checkButton.disabled = isLoading;
+            urlInput.disabled = isLoading;
+            loader.classList.toggle('hidden', !isLoading);
+            buttonText.classList.toggle('hidden', isLoading);
+        };
+
+        const displayResult = (data) => {
+            if (data.status === 'Ошибка') {
+                resultWrapper.innerHTML = `<div class="text-center text-red-400 p-4"><h3 class="text-xl font-bold">Ошибка анализа</h3><p>${data.message || 'Не удалось получить данные.'}</p></div>`;
+                resultWrapper.classList.remove('hidden');
+                return;
+            }
+
+            const isSuccess = data.status === 'Работает';
+            const statusColorClass = isSuccess ? 'text-green-400' : 'text-red-400';
+            const hostname = new URL(data.url).hostname;
+            const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain_url=${hostname}`;
+
+            const headersHTML = data.response.headers ? Object.entries(data.response.headers).map(([key, value]) => `
+                <tr>
+                    <td class="py-2 pr-4 font-semibold text-gray-300">${key}</td>
+                    <td class="py-2 text-gray-400 break-all">${value}</td>
+                </tr>
+            `).join('') : '<tr><td colspan="2">Заголовки не найдены.</td></tr>';
+
+            const timingBar = (value, total, color) => {
+                const percentage = total > 0 ? (value / total) * 100 : 0;
+                return `<div class="w-full bg-gray-700 rounded-full h-2.5"><div class="${color} h-2.5 rounded-full" style="width: ${percentage}%"></div></div>`;
+            };
+            
+            const totalTime = data.timing.total;
+            
+            const techStackHTML = data.tech_stack && data.tech_stack.length > 0
+                ? data.tech_stack.map(tech => `<span class="bg-gray-700 text-gray-300 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">${tech}</span>`).join('')
+                : '<span>Не определен</span>';
+
+            const dnsRecordsHTML = data.dns ? Object.entries(data.dns).map(([type, records]) => {
+                if (!records || records.length === 0) return '';
+                const recordRows = records.map(rec => {
+                    let value = '';
+                    switch(type) {
+                        case 'A': value = rec.ip; break;
+                        case 'AAAA': value = rec.ipv6; break;
+                        case 'MX': value = `${rec.target} (pri: ${rec.pri})`; break;
+                        case 'NS': value = rec.target; break;
+                        case 'TXT': value = rec.txt; break;
+                        default: value = JSON.stringify(rec);
+                    }
+                    return `<tr><td class="py-1 pl-8 text-gray-400 break-all">${value}</td></tr>`;
+                }).join('');
+
+                return `<tr><td class="pt-3 pb-1 font-semibold text-gray-300">${type}</td></tr>${recordRows}`;
+            }).join('') : '<tr><td>DNS записи не найдены.</td></tr>';
+
+
+            resultWrapper.innerHTML = `
+                <!-- HEADER -->
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+                    <div class="flex items-center gap-3 mb-3 sm:mb-0">
+                        <img src="${faviconUrl}" alt="favicon" class="favicon-img" onerror="this.style.display='none'">
+                        <span class="font-bold text-2xl text-white break-all">${hostname}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-lg font-bold ${statusColorClass}">
+                        <div class="w-3 h-3 rounded-full ${isSuccess ? 'bg-green-400' : 'bg-red-400'}"></div>
+                        ${data.status} (${data.http_code})
+                    </div>
+                </div>
+
+                <!-- TABS -->
+                <div class="mb-6 border-b border-gray-700">
+                    <nav id="tabs" class="flex space-x-1 sm:space-x-2 -mb-px overflow-x-auto">
+                        <button class="tab-button active" data-tab="overview">Обзор</button>
+                        <button class="tab-button" data-tab="timings">Тайминги</button>
+                        <button class="tab-button" data-tab="ssl">SSL</button>
+                        <button class="tab-button" data-tab="dns">DNS</button>
+                        <button class="tab-button" data-tab="headers">Заголовки</button>
+                    </nav>
+                </div>
+
+                <!-- TAB CONTENT -->
+                <div id="tab-content-wrapper">
+                    <!-- Overview Tab -->
+                    <div id="overview" class="tab-content active">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="font-semibold text-white mb-3">Сервер</h4>
+                                <ul class="space-y-2 text-sm">
+                                    <li class="flex justify-between"><span>IP Адрес:</span> <strong class="font-mono text-gray-300">${data.server.ip || 'N/A'}</strong></li>
+                                    <li class="flex justify-between"><span>Локация:</span> <strong class="text-gray-300">${data.server.location || 'N/A'}</strong></li>
+                                    <li class="flex justify-between"><span>Провайдер:</span> <strong class="text-gray-300">${data.server.isp || 'N/A'}</strong></li>
+                                    <li class="flex justify-between"><span>Часовой пояс:</span> <strong class="text-gray-300">${data.server.timezone || 'N/A'}</strong></li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-white mb-3">Ответ</h4>
+                                <ul class="space-y-2 text-sm">
+                                    <li class="flex justify-between"><span>Тип контента:</span> <strong class="text-gray-300 truncate">${data.response.content_type || 'N/A'}</strong></li>
+                                    <li class="flex justify-between"><span>Размер:</span> <strong class="text-gray-300">${(data.response.size_bytes / 1024).toFixed(2)} KB</strong></li>
+                                    <li class="flex justify-between"><span>Редиректы:</span> <strong class="text-gray-300">${data.response.redirect_count}</strong></li>
+                                </ul>
+                            </div>
+                            <div class="md:col-span-2">
+                                <h4 class="font-semibold text-white mb-3">Технологии</h4>
+                                <div class="text-sm">${techStackHTML}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Timings Tab -->
+                    <div id="timings" class="tab-content">
+                        <h4 class="font-semibold text-white mb-4">Общее время: <span class="text-indigo-400">${totalTime} мс</span></h4>
+                        <ul class="space-y-4 text-sm">
+                            <li class="grid grid-cols-4 gap-4 items-center">
+                                <span class="col-span-1">DNS</span>
+                                <div class="col-span-2">${timingBar(data.timing.dns_lookup, totalTime, 'bg-sky-500')}</div>
+                                <span class="col-span-1 text-right font-mono">${data.timing.dns_lookup} мс</span>
+                            </li>
+                            <li class="grid grid-cols-4 gap-4 items-center">
+                                <span class="col-span-1">TCP</span>
+                                <div class="col-span-2">${timingBar(data.timing.tcp_connect - data.timing.dns_lookup, totalTime, 'bg-orange-500')}</div>
+                                <span class="col-span-1 text-right font-mono">${data.timing.tcp_connect - data.timing.dns_lookup} мс</span>
+                            </li>
+                            <li class="grid grid-cols-4 gap-4 items-center">
+                                <span class="col-span-1">SSL</span>
+                                <div class="col-span-2">${timingBar(data.timing.ssl_handshake - data.timing.tcp_connect, totalTime, 'bg-purple-500')}</div>
+                                <span class="col-span-1 text-right font-mono">${data.timing.ssl_handshake - data.timing.tcp_connect} мс</span>
+                            </li>
+                             <li class="grid grid-cols-4 gap-4 items-center">
+                                <span class="col-span-1">TTFB</span>
+                                <div class="col-span-2">${timingBar(data.timing.ttfb - data.timing.ssl_handshake, totalTime, 'bg-green-500')}</div>
+                                <span class="col-span-1 text-right font-mono">${data.timing.ttfb - data.timing.ssl_handshake} мс</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- SSL Tab -->
+                    <div id="ssl" class="tab-content">
+                        ${data.ssl ? `
+                        <ul class="space-y-2 text-sm">
+                            <li class="flex justify-between"><span>Выдан:</span> <strong class="text-gray-300">${data.ssl.issuer}</strong></li>
+                            <li class="flex justify-between"><span>Истекает:</span> <strong class="text-gray-300">${new Date(data.ssl.expires_at).toLocaleString('ru-RU')}</strong></li>
+                            <li class="flex justify-between"><span>Осталось дней:</span> <strong class="text-gray-300">${data.ssl.days_left}</strong></li>
+                        </ul>
+                        ` : '<p class="text-gray-400">SSL сертификат не найден или сайт работает по HTTP.</p>'}
+                    </div>
+
+                    <!-- DNS Tab -->
+                    <div id="dns" class="tab-content">
+                         <div class="max-h-60 overflow-y-auto bg-gray-900/50 p-3 rounded-md">
+                            <table class="w-full text-sm"><tbody>${dnsRecordsHTML}</tbody></table>
+                        </div>
+                    </div>
+
+                    <!-- Headers Tab -->
+                    <div id="headers" class="tab-content">
+                        <div class="max-h-60 overflow-y-auto bg-gray-900/50 p-3 rounded-md">
+                            <table class="w-full text-sm"><tbody>${headersHTML}</tbody></table>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            resultWrapper.classList.remove('hidden');
+            
+            // Tab logic
+            const tabs = document.getElementById('tabs');
+            const tabContentWrapper = document.getElementById('tab-content-wrapper');
+            tabs.addEventListener('click', (e) => {
+                if (e.target.classList.contains('tab-button')) {
+                    tabs.querySelector('.active').classList.remove('active');
+                    e.target.classList.add('active');
+                    
+                    tabContentWrapper.querySelector('.active').classList.remove('active');
+                    tabContentWrapper.querySelector(`#${e.target.dataset.tab}`).classList.add('active');
+                }
+            });
+        };
+
+        const getHistory = () => JSON.parse(localStorage.getItem('devpulse_history')) || [];
+
+        const saveToHistory = (resultData) => {
+            let history = getHistory();
+            history.unshift(resultData);
+            history = history.slice(0, 5);
+            localStorage.setItem('devpulse_history', JSON.stringify(history));
+            renderHistory();
+        };
+        
+        const renderHistory = () => {
+            const history = getHistory();
+            if (history.length === 0) {
+                historyContainer.classList.add('hidden');
+                return;
+            }
+
+            historyContainer.classList.remove('hidden');
+            historyList.innerHTML = history.map(item => {
+                if (!item.url) return '';
+                const isSuccess = item.status === 'Работает';
+                const hostname = new URL(item.url).hostname;
+                const faviconUrl = `https://www.google.com/s2/favicons?sz=32&domain_url=${hostname}`;
+                const statusIcon = `<div class="w-2.5 h-2.5 rounded-full ${isSuccess ? 'bg-green-400' : 'bg-red-400'}"></div>`;
+                
+                return `
+                    <div class="glass-card rounded-lg p-3 flex justify-between items-center fade-in-up">
+                        <div class="flex items-center gap-3">
+                            <img src="${faviconUrl}" alt="ico" class="favicon-img w-6 h-6" onerror="this.style.visibility='hidden'">
+                            <span class="font-medium text-white break-all">${hostname}</span>
+                        </div>
+                        <div class="flex items-center gap-4 text-sm">
+                            <span class="text-gray-400 hidden sm:block">${item.timing?.total || 0} мс</span>
+                            <span class="font-mono bg-gray-900/50 px-2 py-1 rounded-md text-white flex items-center gap-2">${statusIcon} ${item.http_code}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        const clearHistory = () => {
+            localStorage.removeItem('devpulse_history');
+            renderHistory();
+        };
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            let url = urlInput.value.trim();
+            if (!url) return;
+
+            if (!/^(https?:\/\/)/i.test(url)) {
+                url = 'https://' + url;
+            }
+
+            setLoadingState(true);
+            resultWrapper.classList.add('hidden');
+
+            try {
+                const response = await fetch(`${API_ENDPOINT}?url=${encodeURIComponent(url)}`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || 'Ошибка сервера');
+                }
+                displayResult(data);
+                saveToHistory(data);
+            } catch (error) {
+                displayResult({ status: 'Ошибка', message: error.message });
+            } finally {
+                setLoadingState(false);
+            }
+        });
+
+        clearHistoryBtn.addEventListener('click', clearHistory);
+        document.addEventListener('DOMContentLoaded', renderHistory);
+    </script>
+</body>
+</html>
